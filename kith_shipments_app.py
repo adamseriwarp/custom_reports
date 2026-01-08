@@ -179,6 +179,10 @@ def generate_pdf(shipments_df, pivot_df, start_date, end_date):
     buffer.seek(0)
     return buffer
 
+# Create clean copies for export BEFORE AgGrid touches them
+export_shipments_df = shipments_df[['Shipment ID', 'Delivery Location', 'Pickup Date']].copy()
+export_pivot_df = pivot_df[['Delivery Location', 'Shipment Count']].copy()
+
 # Display Shipments Breakdown table
 st.subheader("Shipments Breakdown")
 st.write(f"Total unique shipments: **{len(shipments_df):,}**")
@@ -208,7 +212,7 @@ st.subheader("Export Data")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    csv_shipments = shipments_df.to_csv(index=False)
+    csv_shipments = export_shipments_df.to_csv(index=False)
     st.download_button(
         label="📥 Download Shipments (CSV)",
         data=csv_shipments,
@@ -217,7 +221,7 @@ with col1:
     )
 
 with col2:
-    csv_pivot = pivot_df.to_csv(index=False)
+    csv_pivot = export_pivot_df.to_csv(index=False)
     st.download_button(
         label="📥 Download Location Summary (CSV)",
         data=csv_pivot,
@@ -226,7 +230,7 @@ with col2:
     )
 
 with col3:
-    pdf_buffer = generate_pdf(shipments_df, pivot_df, str(start_date), str(end_date))
+    pdf_buffer = generate_pdf(export_shipments_df, export_pivot_df, str(start_date), str(end_date))
     st.download_button(
         label="📄 Download Full Report (PDF)",
         data=pdf_buffer,
