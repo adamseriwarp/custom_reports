@@ -1,0 +1,18 @@
+# Environment
+.env
+.venv/
+venv/
+
+# Streamlit secrets (for local dev only)
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
