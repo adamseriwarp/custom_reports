@@ -3,6 +3,11 @@ import pandas as pd
 from datetime import datetime, timedelta
 from st_aggrid import AgGrid, GridOptionsBuilder
 from db_connection import query_to_dataframe
+from io import BytesIO
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
 st.set_page_config(page_title="KITH Shipments Report", layout="wide")
 
@@ -121,6 +126,59 @@ pivot_df = pivot_df.rename(columns={
 })
 pivot_df = pivot_df.sort_values('Shipment Count', ascending=False).reset_index(drop=True)
 
+# Helper function to generate PDF
+def generate_pdf(shipments_df, pivot_df, start_date, end_date):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter))
+    elements = []
+    styles = getSampleStyleSheet()
+
+    # Title
+    title = Paragraph(f"KITH Shipments Report ({start_date} to {end_date})", styles['Heading1'])
+    elements.append(title)
+    elements.append(Spacer(1, 20))
+
+    # Shipments Breakdown
+    elements.append(Paragraph(f"Shipments Breakdown (Total: {len(shipments_df):,})", styles['Heading2']))
+    elements.append(Spacer(1, 10))
+
+    shipments_data = [shipments_df.columns.tolist()] + shipments_df.values.tolist()
+    shipments_table = Table(shipments_data)
+    shipments_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+    elements.append(shipments_table)
+    elements.append(Spacer(1, 30))
+
+    # Pivot table
+    elements.append(Paragraph(f"Shipment Count by Delivery Location (Total: {len(pivot_df):,})", styles['Heading2']))
+    elements.append(Spacer(1, 10))
+
+    pivot_data = [pivot_df.columns.tolist()] + pivot_df.values.tolist()
+    pivot_table = Table(pivot_data)
+    pivot_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+    ]))
+    elements.append(pivot_table)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
 # Display Shipments Breakdown table
 st.subheader("Shipments Breakdown")
 st.write(f"Total unique shipments: **{len(shipments_df):,}**")
@@ -143,3 +201,35 @@ gb2.configure_default_column(sortable=True, filter=True, resizable=True)
 grid_options2 = gb2.build()
 AgGrid(pivot_df, gridOptions=grid_options2, height=400, theme="streamlit")
 
+st.divider()
+
+# Export section
+st.subheader("Export Data")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    csv_shipments = shipments_df.to_csv(index=False)
+    st.download_button(
+        label="📥 Download Shipments (CSV)",
+        data=csv_shipments,
+        file_name=f"kith_shipments_{start_date}_{end_date}.csv",
+        mime="text/csv"
+    )
+
+with col2:
+    csv_pivot = pivot_df.to_csv(index=False)
+    st.download_button(
+        label="📥 Download Location Summary (CSV)",
+        data=csv_pivot,
+        file_name=f"kith_location_summary_{start_date}_{end_date}.csv",
+        mime="text/csv"
+    )
+
+with col3:
+    pdf_buffer = generate_pdf(shipments_df, pivot_df, str(start_date), str(end_date))
+    st.download_button(
+        label="📄 Download Full Report (PDF)",
+        data=pdf_buffer,
+        file_name=f"kith_report_{start_date}_{end_date}.pdf",
+        mime="application/pdf"
+    )

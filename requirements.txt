@@ -3,4 +3,5 @@ pandas
 pymysql
 python-dotenv
 streamlit-aggrid
+reportlab
 
