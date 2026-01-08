@@ -75,10 +75,10 @@ if df.empty:
 df['pickDateArrived'] = pd.to_datetime(df['pickDateArrived'])
 
 def is_warehouse(location):
-    """Check if a location is a warehouse."""
+    """Check if a location is a warehouse (starts with WTCH-)."""
     if pd.isna(location) or location == '':
         return False
-    return location.startswith('WTCH-') or 'WH' in location.upper()
+    return location.startswith('WTCH-')
 
 def deduplicate_order(group):
     """For each orderCode, get the row with latest date, preferring non-warehouse locations."""
