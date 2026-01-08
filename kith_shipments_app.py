@@ -71,8 +71,35 @@ if df.empty:
     st.stop()
 
 # Deduplicate: keep only the row with the latest pickDateArrived per orderCode
+# If multiple rows have the same latest date, filter out warehouse locations
 df['pickDateArrived'] = pd.to_datetime(df['pickDateArrived'])
-df_deduped = df.loc[df.groupby('orderCode')['pickDateArrived'].idxmax()]
+
+def is_warehouse(location):
+    """Check if a location is a warehouse."""
+    if pd.isna(location) or location == '':
+        return False
+    return location.startswith('WTCH-') or 'WH' in location.upper()
+
+def deduplicate_order(group):
+    """For each orderCode, get the row with latest date, preferring non-warehouse locations."""
+    # Get the max date for this orderCode
+    max_date = group['pickDateArrived'].max()
+    # Filter to only rows with the max date
+    latest_rows = group[group['pickDateArrived'] == max_date]
+
+    if len(latest_rows) == 1:
+        return latest_rows.iloc[0]
+
+    # Multiple rows with same latest date - filter out warehouses
+    non_warehouse = latest_rows[~latest_rows['dropLocationName'].apply(is_warehouse)]
+
+    if len(non_warehouse) >= 1:
+        return non_warehouse.iloc[0]
+    else:
+        # All are warehouses, just return the first one
+        return latest_rows.iloc[0]
+
+df_deduped = df.groupby('orderCode', group_keys=False).apply(deduplicate_order).reset_index(drop=True)
 
 # Prepare Shipments Breakdown table
 shipments_df = df_deduped.copy()
