@@ -106,8 +106,8 @@ def deduplicate_order(group):
 
 df_deduped = df.groupby('orderCode', group_keys=False).apply(deduplicate_order).reset_index(drop=True)
 
-# Prepare Shipments Breakdown table
-shipments_df = df_deduped.copy()
+# Prepare Shipments Breakdown table - only keep the columns we need
+shipments_df = df_deduped[['orderCode', 'dropLocationName', 'pickDateArrived']].copy()
 shipments_df['pickDateArrived'] = shipments_df['pickDateArrived'].dt.strftime('%Y-%m-%d')
 shipments_df = shipments_df.rename(columns={
     'orderCode': 'Shipment ID',
