@@ -10,28 +10,24 @@ def check_password():
         """Checks whether a password entered by the user is correct."""
         if st.session_state["password"] == st.secrets["app"]["password"]:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Don't store password
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        # First run, show input for password
         st.text_input(
             "Password", type="password", on_change=password_entered, key="password"
         )
         return False
     elif not st.session_state["password_correct"]:
-        # Password incorrect, show input + error
         st.text_input(
             "Password", type="password", on_change=password_entered, key="password"
         )
         st.error("😕 Password incorrect")
         return False
     else:
-        # Password correct
         return True
 
-# Database connection settings from Streamlit Secrets
 def get_db_config():
     return {
         "host": st.secrets["mysql"]["host"],
@@ -67,7 +63,6 @@ def fetch_otp_data(start_date: str, end_date: str) -> pd.DataFrame:
     df = pd.read_sql(query, conn)
     conn.close()
     
-    # Convert pickWindowFrom to datetime and filter by date range
     df['pickWindowFrom_dt'] = pd.to_datetime(df['pickWindowFrom'], format='%m/%d/%Y %H:%M:%S', errors='coerce')
     
     start = pd.to_datetime(start_date)
@@ -83,21 +78,21 @@ def calculate_transit_times(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
-    # Convert to datetime
     df['pickTimeArrived'] = pd.to_datetime(df['pickTimeArrived'], errors='coerce')
     df['dropTimeArrived'] = pd.to_datetime(df['dropTimeArrived'], errors='coerce')
     df['pickWindowFrom'] = pd.to_datetime(df['pickWindowFrom'], errors='coerce')
     df['dropWindowFrom'] = pd.to_datetime(df['dropWindowFrom'], errors='coerce')
 
-    # Since each loadId has only one warpId (with shipmentStatus = Complete), just use the values directly
     result = df[['loadId', 'warpId', 'pickTimeArrived', 'dropTimeArrived', 
                  'pickWindowFrom', 'dropWindowFrom', 'palletCount', 'transitCost']].copy()
 
-    # Calculate transit days
     result['Transit Days'] = (
         result['dropTimeArrived'] - result['pickTimeArrived']
     ).dt.total_seconds() / (24 * 3600)
     result['Transit Days'] = result['Transit Days'].round(2)
+    
+    # Format Transit Cost to 2 decimal places
+    result['transitCost'] = result['transitCost'].round(2)
 
     # Calculate OTP (On Time Pickup)
     actual_pick_date = result['pickTimeArrived'].dt.normalize()
@@ -113,7 +108,6 @@ def calculate_transit_times(df: pd.DataFrame) -> pd.DataFrame:
     result['OTD Days Late'] = (actual_drop_date - scheduled_drop_date).dt.days
     result.loc[result['OTD Days Late'] < 0, 'OTD Days Late'] = 0
 
-    # Rename columns for clarity
     result = result.rename(columns={
         'loadId': 'Load ID',
         'warpId': 'WarpID',
@@ -125,7 +119,6 @@ def calculate_transit_times(df: pd.DataFrame) -> pd.DataFrame:
         'transitCost': 'Transit Cost'
     })
     
-    # Reorder columns
     result = result[['Load ID', 'WarpID', 'Scheduled Pickup', 'Actual Pickup', 'OTP', 'OTP Days Late',
                      'Scheduled Dropoff', 'Actual Dropoff', 'OTD', 'OTD Days Late', 
                      'Transit Days', 'Pallet Count', 'Transit Cost']]
@@ -141,7 +134,6 @@ def main():
     
     st.markdown("Carrier: **Accelerated USA Inc** | Status: **Complete**")
     
-    # Date range selector
     col1, col2 = st.sidebar.columns(2)
     with col1:
         start_date = st.date_input("Start Date", datetime(2024, 12, 15))
@@ -152,7 +144,6 @@ def main():
         st.error("Start date must be before end date!")
         return
     
-    # Fetch data button
     if st.sidebar.button("🔄 Fetch Data", type="primary"):
         with st.spinner("Fetching data from database..."):
             try:
@@ -163,12 +154,11 @@ def main():
                 st.error(f"Error fetching data: {e}")
                 return
     
-    # Display results
     if 'transit_data' in st.session_state and not st.session_state['transit_data'].empty:
         transit_df = st.session_state['transit_data']
         
-        # Summary metrics
-        col1, col2, col3, col4 = st.columns(4)
+        # Summary metrics - 5 columns now
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("Total Loads", len(transit_df))
         with col2:
@@ -180,12 +170,14 @@ def main():
         with col4:
             max_transit = transit_df['Transit Days'].max()
             st.metric("Max Transit Days", f"{max_transit:.2f}" if pd.notna(max_transit) else "N/A")
+        with col5:
+            avg_cost = transit_df['Transit Cost'].mean()
+            st.metric("Avg Transit Cost", f"${avg_cost:.2f}" if pd.notna(avg_cost) else "N/A")
         
         st.markdown("---")
         st.subheader("📊 Transit Time Data")
         st.dataframe(transit_df, use_container_width=True, hide_index=True)
         
-        # Download button
         csv = transit_df.to_csv(index=False)
         st.download_button(
             label="📥 Download CSV",
