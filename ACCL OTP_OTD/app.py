@@ -7,7 +7,6 @@ def check_password():
     """Returns `True` if the user has entered the correct password."""
     
     def password_entered():
-        """Checks whether a password entered by the user is correct."""
         if st.session_state["password"] == st.secrets["app"]["password"]:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
@@ -15,14 +14,10 @@ def check_password():
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
+        st.text_input("Password", type="password", on_change=password_entered, key="password")
         return False
     elif not st.session_state["password_correct"]:
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
+        st.text_input("Password", type="password", on_change=password_entered, key="password")
         st.error("😕 Password incorrect")
         return False
     else:
@@ -39,7 +34,6 @@ def get_db_config():
 
 @st.cache_data(ttl=600)
 def fetch_otp_data(start_date: str, end_date: str) -> pd.DataFrame:
-    """Fetch OTP report data from MySQL database."""
     query = """
     SELECT 
         o.loadId,
@@ -64,17 +58,14 @@ def fetch_otp_data(start_date: str, end_date: str) -> pd.DataFrame:
     conn.close()
     
     df['pickWindowFrom_dt'] = pd.to_datetime(df['pickWindowFrom'], format='%m/%d/%Y %H:%M:%S', errors='coerce')
-    
     start = pd.to_datetime(start_date)
     end = pd.to_datetime(end_date)
-    
     df = df[(df['pickWindowFrom_dt'] >= start) & (df['pickWindowFrom_dt'] <= end)]
     df = df.drop(columns=['pickWindowFrom_dt'])
     
     return df
 
 def calculate_transit_times(df: pd.DataFrame) -> pd.DataFrame:
-    """Calculate transit times for each loadId."""
     if df.empty:
         return pd.DataFrame()
 
@@ -91,17 +82,17 @@ def calculate_transit_times(df: pd.DataFrame) -> pd.DataFrame:
     ).dt.total_seconds() / (24 * 3600)
     result['Transit Days'] = result['Transit Days'].round(2)
     
-    # Format Transit Cost to 2 decimal places
-    result['transitCost'] = pd.to_numeric(result['transitCost'], errors='coerce').round(2)
+    # Convert transitCost to numeric
+    result['transitCost'] = pd.to_numeric(result['transitCost'], errors='coerce')
 
-    # Calculate OTP (On Time Pickup)
+    # Calculate OTP
     actual_pick_date = result['pickTimeArrived'].dt.normalize()
     scheduled_pick_date = result['pickWindowFrom'].dt.normalize()
     result['OTP'] = (actual_pick_date > scheduled_pick_date).map({True: 'Late', False: 'On Time'})
     result['OTP Days Late'] = (actual_pick_date - scheduled_pick_date).dt.days
     result.loc[result['OTP Days Late'] < 0, 'OTP Days Late'] = 0
 
-    # Calculate OTD (On Time Delivery)
+    # Calculate OTD
     actual_drop_date = result['dropTimeArrived'].dt.normalize()
     scheduled_drop_date = result['dropWindowFrom'].dt.normalize()
     result['OTD'] = (actual_drop_date > scheduled_drop_date).map({True: 'Late', False: 'On Time'})
@@ -157,7 +148,7 @@ def main():
     if 'transit_data' in st.session_state and not st.session_state['transit_data'].empty:
         transit_df = st.session_state['transit_data']
         
-        # Summary metrics - 5 columns now
+        # Summary metrics
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.metric("Total Loads", len(transit_df))
@@ -176,7 +167,12 @@ def main():
         
         st.markdown("---")
         st.subheader("📊 Transit Time Data")
-        st.dataframe(transit_df, use_container_width=True, hide_index=True)
+        
+        # Format Transit Cost with $ for display
+        display_df = transit_df.copy()
+        display_df['Transit Cost'] = display_df['Transit Cost'].apply(lambda x: f"${x:.2f}" if pd.notna(x) else "")
+        
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
         
         csv = transit_df.to_csv(index=False)
         st.download_button(
