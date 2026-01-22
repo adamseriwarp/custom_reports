@@ -92,7 +92,7 @@ def calculate_transit_times(df: pd.DataFrame) -> pd.DataFrame:
     result['Transit Days'] = result['Transit Days'].round(2)
     
     # Format Transit Cost to 2 decimal places
-    result['transitCost'] = result['transitCost'].round(2)
+    result['transitCost'] = pd.to_numeric(result['transitCost'], errors='coerce').round(2)
 
     # Calculate OTP (On Time Pickup)
     actual_pick_date = result['pickTimeArrived'].dt.normalize()
