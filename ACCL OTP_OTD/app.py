@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import mysql.connector
-from datetime import datetime
+from datetime import datetime, timedelta
 
 def check_password():
     """Returns `True` if the user has entered the correct password."""
@@ -85,17 +85,25 @@ def calculate_transit_times(df: pd.DataFrame) -> pd.DataFrame:
     # Convert transitCost to numeric
     result['transitCost'] = pd.to_numeric(result['transitCost'], errors='coerce')
 
-    # Calculate OTP
+    # Calculate OTP (On Time Pickup)
+    # Late if actual pickup is AFTER 9:00 AM on the scheduled day
+    scheduled_pick_9am = result['pickWindowFrom'].dt.normalize() + pd.Timedelta(hours=9)
+    result['OTP'] = (result['pickTimeArrived'] > scheduled_pick_9am).map({True: 'Late', False: 'On Time'})
+    
+    # Calculate OTP Days Late (how many calendar days late)
     actual_pick_date = result['pickTimeArrived'].dt.normalize()
     scheduled_pick_date = result['pickWindowFrom'].dt.normalize()
-    result['OTP'] = (actual_pick_date > scheduled_pick_date).map({True: 'Late', False: 'On Time'})
     result['OTP Days Late'] = (actual_pick_date - scheduled_pick_date).dt.days
     result.loc[result['OTP Days Late'] < 0, 'OTP Days Late'] = 0
 
-    # Calculate OTD
+    # Calculate OTD (On Time Delivery)
+    # Late if actual dropoff is AFTER 9:00 AM on the scheduled day
+    scheduled_drop_9am = result['dropWindowFrom'].dt.normalize() + pd.Timedelta(hours=9)
+    result['OTD'] = (result['dropTimeArrived'] > scheduled_drop_9am).map({True: 'Late', False: 'On Time'})
+    
+    # Calculate OTD Days Late (how many calendar days late)
     actual_drop_date = result['dropTimeArrived'].dt.normalize()
     scheduled_drop_date = result['dropWindowFrom'].dt.normalize()
-    result['OTD'] = (actual_drop_date > scheduled_drop_date).map({True: 'Late', False: 'On Time'})
     result['OTD Days Late'] = (actual_drop_date - scheduled_drop_date).dt.days
     result.loc[result['OTD Days Late'] < 0, 'OTD Days Late'] = 0
 
