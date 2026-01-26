@@ -28,16 +28,70 @@ def get_quarter_case():
         END
     """
 
+def get_market_case(location_col):
+    """
+    SQL CASE statement to extract market code from various crossdock patterns.
+
+    Patterns supported:
+    - WTCH-{AIRPORT}-{#} → 3-letter airport code (e.g., WTCH-LAX-9 → LAX)
+    - ACCL-{AIRPORT} → 3-letter airport code (e.g., ACCL-EWR → EWR)
+    - SB-{CITY}-{CODE} → mapped to airport code (e.g., SB-NYC-UG → EWR)
+    - Cross-Dock locations → mapped to nearest airport
+    """
+    return f"""
+        CASE
+            -- WTCH pattern: WTCH-LAX-9 → LAX
+            WHEN {location_col} LIKE 'WTCH-%' THEN SUBSTRING({location_col}, 6, 3)
+
+            -- ACCL pattern: ACCL-EWR → EWR
+            WHEN {location_col} LIKE 'ACCL-%' THEN SUBSTRING({location_col}, 6, 3)
+
+            -- SB pattern: SB-{CITY}-{CODE} → mapped airport code
+            WHEN {location_col} LIKE 'SB-ATL-%' THEN 'ATL'
+            WHEN {location_col} LIKE 'SB-DC-%' THEN 'DCA'
+            WHEN {location_col} LIKE 'SB-DAL-%' THEN 'DFW'
+            WHEN {location_col} LIKE 'SB-SEA-%' THEN 'SEA'
+            WHEN {location_col} LIKE 'SB-LA-%' THEN 'LAX'
+            WHEN {location_col} LIKE 'SB-DEN-%' THEN 'DEN'
+            WHEN {location_col} LIKE 'SB-NYC-%' THEN 'EWR'
+            WHEN {location_col} LIKE 'SB-PHX-%' THEN 'PHX'
+            WHEN {location_col} LIKE 'SB-MIA-%' THEN 'MIA'
+
+            -- Cross-Dock pattern: specific location mappings
+            WHEN {location_col} LIKE '%GoBolt%NYC%Cross-Dock%' THEN 'EWR'
+            WHEN {location_col} LIKE '%Cross-Dock%Chicago%' THEN 'ORD'
+
+            ELSE NULL
+        END
+    """
+
+def is_crossdock(location_col):
+    """SQL condition to check if a location is any type of crossdock"""
+    return f"""
+        ({location_col} LIKE 'WTCH-%'
+         OR {location_col} LIKE 'ACCL-%'
+         OR {location_col} LIKE 'SB-%'
+         OR {location_col} LIKE '%Cross-Dock%')
+    """
+
 @st.cache_data(ttl=300)
 def get_market_summary():
-    """Get market-level summary for LTL data only"""
+    """Get market-level summary for LTL data from all crossdock patterns"""
 
-    # LTL Query - based on documented logic
+    # Market extraction for pick and drop locations
+    pick_market = get_market_case('pickLocationName')
+    drop_market = get_market_case('dropLocationName')
+
+    # Crossdock checks
+    pick_is_xdock = is_crossdock('pickLocationName')
+    drop_is_xdock = is_crossdock('dropLocationName')
+
+    # LTL Query - includes all crossdock patterns
     ltl_query = f"""
         SELECT
             CASE
-                WHEN pickLocationName LIKE 'WTCH-%' THEN SUBSTRING(pickLocationName, 6, 3)
-                WHEN dropLocationName LIKE 'WTCH-%' THEN SUBSTRING(dropLocationName, 6, 3)
+                WHEN {pick_market} IS NOT NULL THEN {pick_market}
+                WHEN {drop_market} IS NOT NULL THEN {drop_market}
             END as market,
             {get_quarter_case()} as quarter,
             COUNT(DISTINCT warpId) as shipments,
@@ -49,12 +103,19 @@ def get_market_summary():
           AND shipmentStatus = 'Complete'
           AND pickWindowFrom LIKE '%/2025%'
           AND (
-              (pickLocationName LIKE 'WTCH-%' AND (dropLocationName NOT LIKE 'WTCH-%' OR dropLocationName IS NULL))
+              ({pick_is_xdock} AND (NOT {drop_is_xdock} OR dropLocationName IS NULL))
               OR
-              (dropLocationName LIKE 'WTCH-%' AND (pickLocationName NOT LIKE 'WTCH-%' OR pickLocationName IS NULL))
+              ({drop_is_xdock} AND (NOT {pick_is_xdock} OR pickLocationName IS NULL))
           )
         GROUP BY market, quarter
+        HAVING market IS NOT NULL
     """
+
+    # Market extraction for subquery (using m. prefix)
+    m_pick_market = get_market_case('m.pickLocationName')
+    m_drop_market = get_market_case('m.dropLocationName')
+    m_pick_is_xdock = is_crossdock('m.pickLocationName')
+    m_drop_is_xdock = is_crossdock('m.dropLocationName')
 
     # LTL Cost Query - sum all costs in orderCode
     ltl_cost_query = f"""
@@ -66,8 +127,8 @@ def get_market_summary():
             SELECT
                 o.orderCode,
                 CASE
-                    WHEN m.pickLocationName LIKE 'WTCH-%' THEN SUBSTRING(m.pickLocationName, 6, 3)
-                    WHEN m.dropLocationName LIKE 'WTCH-%' THEN SUBSTRING(m.dropLocationName, 6, 3)
+                    WHEN {m_pick_market} IS NOT NULL THEN {m_pick_market}
+                    WHEN {m_drop_market} IS NOT NULL THEN {m_drop_market}
                 END as market,
                 {get_quarter_case().replace('pickWindowFrom', 'm.pickWindowFrom')} as quarter,
                 SUM(o.costAllocationNumber) as order_cost
@@ -80,15 +141,16 @@ def get_market_summary():
                   AND shipmentStatus = 'Complete'
                   AND pickWindowFrom LIKE '%/2025%'
                   AND (
-                      (pickLocationName LIKE 'WTCH-%' AND (dropLocationName NOT LIKE 'WTCH-%' OR dropLocationName IS NULL))
+                      ({pick_is_xdock} AND (NOT {drop_is_xdock} OR dropLocationName IS NULL))
                       OR
-                      (dropLocationName LIKE 'WTCH-%' AND (pickLocationName NOT LIKE 'WTCH-%' OR pickLocationName IS NULL))
+                      ({drop_is_xdock} AND (NOT {pick_is_xdock} OR pickLocationName IS NULL))
                   )
             ) m ON o.orderCode = m.orderCode
             WHERE o.shipmentType = 'Less Than Truckload'
               AND o.shipmentStatus = 'Complete'
             GROUP BY o.orderCode, market, quarter
         ) sub
+        WHERE sub.market IS NOT NULL
         GROUP BY sub.market, sub.quarter
     """
 
