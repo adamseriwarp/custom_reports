@@ -324,10 +324,13 @@ else:
         fig_profit.add_trace(go.Scatter(
             x=quarterly['quarter'].astype(str),
             y=quarterly['profit'],
-            mode='lines+markers',
+            mode='lines+markers+text',
             name='Profit',
             line=dict(color='#2ecc71', width=3),
-            marker=dict(size=10)
+            marker=dict(size=10),
+            text=['${:,.0f}'.format(v) for v in quarterly['profit']],
+            textposition='top center',
+            textfont=dict(size=11)
         ))
         fig_profit.update_layout(
             xaxis_title="Quarter",
@@ -342,10 +345,13 @@ else:
         fig_cpp.add_trace(go.Scatter(
             x=quarterly['quarter'].astype(str),
             y=quarterly['cost_per_piece'],
-            mode='lines+markers',
+            mode='lines+markers+text',
             name='Cost/Piece',
             line=dict(color='#3498db', width=3),
-            marker=dict(size=10)
+            marker=dict(size=10),
+            text=['${:,.0f}'.format(v) for v in quarterly['cost_per_piece']],
+            textposition='top center',
+            textfont=dict(size=11)
         ))
         fig_cpp.update_layout(
             xaxis_title="Quarter",
