@@ -8,13 +8,13 @@ from db_connection import test_connection, execute_query
 
 # Page configuration
 st.set_page_config(
-    page_title="Financial Reports - Board Meeting",
+    page_title="LTL Financial Reports - Board Meeting",
     page_icon="📊",
     layout="wide"
 )
 
 # Title
-st.title("📊 Market Financial Report - 2025")
+st.title("📊 LTL Market Financial Report - 2025")
 
 # Helper function to get quarter from date string (MM/DD/YYYY HH:MM:SS)
 def get_quarter_case():
@@ -30,7 +30,7 @@ def get_quarter_case():
 
 @st.cache_data(ttl=300)
 def get_market_summary():
-    """Get market-level summary combining LTL and FTL data"""
+    """Get market-level summary for LTL data only"""
 
     # LTL Query - based on documented logic
     ltl_query = f"""
@@ -92,61 +92,23 @@ def get_market_summary():
         GROUP BY sub.market, sub.quarter
     """
 
-    # FTL Query - based on documented logic (by orderCode, split by market for multi-market orders)
-    ftl_query = f"""
-        SELECT
-            CASE
-                WHEN pickLocationName LIKE 'WTCH-%' THEN SUBSTRING(pickLocationName, 6, 3)
-                WHEN dropLocationName LIKE 'WTCH-%' THEN SUBSTRING(dropLocationName, 6, 3)
-            END as market,
-            {get_quarter_case()} as quarter,
-            COUNT(DISTINCT orderCode) as shipments,
-            SUM(revenueAllocationNumber) as revenue,
-            SUM(costAllocationNumber) as cost,
-            SUM(COALESCE(pieces, 0)) as pieces
-        FROM otp_reports
-        WHERE shipmentType = 'Full Truckload'
-          AND mainShipment = 'YES'
-          AND shipmentStatus = 'Complete'
-          AND pickWindowFrom LIKE '%/2025%'
-          AND (
-              (pickLocationName LIKE 'WTCH-%' AND (dropLocationName NOT LIKE 'WTCH-%' OR dropLocationName IS NULL))
-              OR
-              (dropLocationName LIKE 'WTCH-%' AND (pickLocationName NOT LIKE 'WTCH-%' OR pickLocationName IS NULL))
-          )
-        GROUP BY market, quarter
-    """
-
     ltl_df = execute_query(ltl_query)
     ltl_cost_df = execute_query(ltl_cost_query)
-    ftl_df = execute_query(ftl_query)
 
     # Merge LTL revenue/pieces with cost
     if ltl_df is not None and ltl_cost_df is not None:
         ltl_df = ltl_df.merge(ltl_cost_df, on=['market', 'quarter'], how='left')
         ltl_df['cost'] = ltl_df['cost'].fillna(0)
-        ltl_df['type'] = 'LTL'
-
-    if ftl_df is not None:
-        ftl_df['type'] = 'FTL'
-
-    # Combine LTL and FTL
-    if ltl_df is not None and ftl_df is not None:
-        combined_df = pd.concat([ltl_df, ftl_df], ignore_index=True)
-    elif ltl_df is not None:
-        combined_df = ltl_df
-    elif ftl_df is not None:
-        combined_df = ftl_df
-    else:
+    elif ltl_df is None:
         return None
 
     # Convert decimal columns to float (MySQL returns Decimal type)
     numeric_cols = ['shipments', 'revenue', 'cost', 'pieces']
     for col in numeric_cols:
-        if col in combined_df.columns:
-            combined_df[col] = combined_df[col].astype(float)
+        if col in ltl_df.columns:
+            ltl_df[col] = ltl_df[col].astype(float)
 
-    return combined_df
+    return ltl_df
 
 # Load data
 with st.spinner("Loading market data..."):
