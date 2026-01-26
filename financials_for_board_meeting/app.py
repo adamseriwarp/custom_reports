@@ -40,13 +40,8 @@ def get_market_case(location_col):
     """
     return f"""
         CASE
-            -- WTCH pattern: WTCH-LAX-9 → LAX
             WHEN {location_col} LIKE 'WTCH-%' THEN SUBSTRING({location_col}, 6, 3)
-
-            -- ACCL pattern: ACCL-EWR → EWR
             WHEN {location_col} LIKE 'ACCL-%' THEN SUBSTRING({location_col}, 6, 3)
-
-            -- SB pattern: SB-{CITY}-{CODE} → mapped airport code
             WHEN {location_col} LIKE 'SB-ATL-%' THEN 'ATL'
             WHEN {location_col} LIKE 'SB-DC-%' THEN 'DCA'
             WHEN {location_col} LIKE 'SB-DAL-%' THEN 'DFW'
@@ -56,11 +51,8 @@ def get_market_case(location_col):
             WHEN {location_col} LIKE 'SB-NYC-%' THEN 'EWR'
             WHEN {location_col} LIKE 'SB-PHX-%' THEN 'PHX'
             WHEN {location_col} LIKE 'SB-MIA-%' THEN 'MIA'
-
-            -- Cross-Dock pattern: specific location mappings
             WHEN {location_col} LIKE '%GoBolt%NYC%Cross-Dock%' THEN 'EWR'
             WHEN {location_col} LIKE '%Cross-Dock%Chicago%' THEN 'ORD'
-
             ELSE NULL
         END
     """
