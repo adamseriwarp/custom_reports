@@ -319,7 +319,7 @@ else:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("💰 Profit Trend")
+        st.subheader("Market Profit Over Time")
         fig_profit = go.Figure()
         fig_profit.add_trace(go.Scatter(
             x=quarterly['quarter'].astype(str),
@@ -340,7 +340,7 @@ else:
         st.plotly_chart(fig_profit, use_container_width=True)
 
     with col2:
-        st.subheader("📦 Cost per Piece Trend")
+        st.subheader("Cost Per Pallet")
         fig_cpp = go.Figure()
         fig_cpp.add_trace(go.Scatter(
             x=quarterly['quarter'].astype(str),
@@ -511,7 +511,7 @@ if not trends_df.empty:
     # Scatter plot showing all markets
     st.subheader("🎯 All Markets: Trend Strength vs Consistency")
 
-    tab1, tab2 = st.tabs(["Profit Trends", "Cost/Piece Trends"])
+    tab1, tab2 = st.tabs(["Market Profit Over Time", "Cost Per Pallet"])
 
     with tab1:
         fig_scatter_profit = px.scatter(
