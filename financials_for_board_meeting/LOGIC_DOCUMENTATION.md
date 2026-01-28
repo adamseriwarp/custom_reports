@@ -84,10 +84,10 @@ Cost = SUM(costAllocationNumber) for ALL warpIds with the same orderCode
 ### Multi-Market FTL Orders
 6 FTL orders touch multiple WTCH markets (e.g., one truck delivering to both WTCH-SEA and WTCH-PDX).
 
-**Handling**: Split the order by market, allocating revenue/cost/pieces based on the mainShipment='YES' leg that touches each market.
+**Handling**: Split the order by market, allocating revenue/cost/pallets based on the mainShipment='YES' leg that touches each market.
 
 Example (P-63829-2541):
-| Market | Legs | Pieces | Revenue | Cost |
+| Market | Legs | Pallets | Revenue | Cost |
 |--------|------|--------|---------|------|
 | DFW | 1 | 6 | $2,032.63 | $1,693.86 |
 | IAH | 1 | 8 | $2,821.15 | $2,350.96 |
@@ -96,32 +96,32 @@ Example (P-63829-2541):
 
 ---
 
-## Pieces (Pallet Count) Logic
+## Pallets Logic
 
-### LTL Pieces
+### LTL Pallets
 **Formula**:
 ```
-IF mainShipment='YES' pieces > 0:
-    Pieces = mainShipment='YES' pieces
+IF mainShipment='YES' pallets > 0:
+    Pallets = mainShipment='YES' pallets
 ELSE:
-    Pieces = SUM(pieces WHERE revenueAllocationNumber > 0 AND NOT crossdock-to-crossdock)
+    Pallets = SUM(pallets WHERE revenueAllocationNumber > 0 AND NOT crossdock-to-crossdock)
 ```
 
 **Notes**:
-- 99.8% of LTL market shipments have pieces in the mainShipment='YES' row
-- Only 41 out of 21,756 have pieces = 0 in mainShipment='YES'
+- 99.8% of LTL market shipments have pallets in the mainShipment='YES' row
+- Only 41 out of 21,756 have pallets = 0 in mainShipment='YES'
 - The fallback SUM approach avoids double-counting (which occurs in 5.6% of normal orders if SUM is always used)
 
-### FTL Pieces
+### FTL Pallets
 **Formula**:
 ```
-Pieces = SUM(pieces) from all mainShipment='YES' rows in the orderCode
+Pallets = SUM(pallets) from all mainShipment='YES' rows in the orderCode
 ```
 
 **Notes**:
-- Multi-stop routes have different pieces per stop (e.g., 26 pallets total across 4 stops: 6, 8, 7, 5)
-- Only sum mainShipment='YES' rows - mainShipment='NO' rows (handling fees) may duplicate pieces
-- For multi-market orders, allocate pieces based on which mainShipment='YES' leg touches each market
+- Multi-stop routes have different pallets per stop (e.g., 26 pallets total across 4 stops: 6, 8, 7, 5)
+- Only sum mainShipment='YES' rows - mainShipment='NO' rows (handling fees) may duplicate pallets
+- For multi-market orders, allocate pallets based on which mainShipment='YES' leg touches each market
 
 ---
 
@@ -131,7 +131,7 @@ Pieces = SUM(pieces) from all mainShipment='YES' rows in the orderCode
 - `mainShipment`: 'YES' = customer-facing shipment, 'NO' = operational leg
 - `revenueAllocationNumber`: Revenue for that row
 - `costAllocationNumber`: Cost for that row
-- `pieces`: Number of pallets for that row
+- `pieces`: Number of pallets for that row (column name is `pieces` in database)
 - `pickLocationName`: Pickup location
 - `dropLocationName`: Dropoff location
 - `shipmentType`: 'Less Than Truckload', 'Full Truckload', etc.

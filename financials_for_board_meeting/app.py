@@ -224,7 +224,7 @@ if selected_market == 'All Markets':
     display_df['profit'] = display_df['profit'].apply(lambda x: f"${x:,.0f}")
     display_df['cost_per_piece'] = display_df['cost_per_piece'].apply(lambda x: f"${x:,.2f}")
     display_df['margin_pct'] = display_df['margin_pct'].apply(lambda x: f"{x:.1f}%")
-    display_df.columns = ['Market', 'Shipments', 'Revenue', 'Cost', 'Pieces', 'Profit', 'Cost/Piece', 'Margin %']
+    display_df.columns = ['Market', 'Shipments', 'Revenue', 'Cost', 'Pallets', 'Profit', 'Cost/Pallet', 'Margin %']
 
     st.dataframe(
         display_df,
@@ -300,7 +300,7 @@ else:
     with col3:
         st.metric("Total Profit", f"${market_totals['profit']:,.0f}")
     with col4:
-        st.metric("Avg Cost/Piece", f"${market_totals['cost_per_piece']:,.2f}")
+        st.metric("Avg Cost/Pallet", f"${market_totals['cost_per_piece']:,.2f}")
 
     st.divider()
 
@@ -311,7 +311,7 @@ else:
     quarterly_display['cost'] = quarterly_display['cost'].apply(lambda x: f"${x:,.0f}")
     quarterly_display['profit'] = quarterly_display['profit'].apply(lambda x: f"${x:,.0f}")
     quarterly_display['cost_per_piece'] = quarterly_display['cost_per_piece'].apply(lambda x: f"${x:,.2f}")
-    quarterly_display.columns = ['Quarter', 'Shipments', 'Revenue', 'Cost', 'Pieces', 'Profit', 'Cost/Piece']
+    quarterly_display.columns = ['Quarter', 'Shipments', 'Revenue', 'Cost', 'Pallets', 'Profit', 'Cost/Pallet']
 
     st.dataframe(quarterly_display, use_container_width=True, hide_index=True)
 
@@ -332,31 +332,41 @@ else:
             textposition='top center',
             textfont=dict(size=11)
         ))
+        # Add 15% padding to y-axis for labels
+        y_min = quarterly['profit'].min()
+        y_max = quarterly['profit'].max()
+        y_range = y_max - y_min if y_max != y_min else abs(y_max) * 0.2
         fig_profit.update_layout(
             xaxis_title="Quarter",
             yaxis_title="Profit ($)",
-            height=350
+            height=350,
+            yaxis=dict(range=[y_min - y_range * 0.1, y_max + y_range * 0.2])
         )
         st.plotly_chart(fig_profit, use_container_width=True)
 
     with col2:
-        st.subheader("Cost Per Pallet")
+        st.subheader("📦 Cost per Pallet Trend")
         fig_cpp = go.Figure()
         fig_cpp.add_trace(go.Scatter(
             x=quarterly['quarter'].astype(str),
             y=quarterly['cost_per_piece'],
             mode='lines+markers+text',
-            name='Cost/Piece',
+            name='Cost/Pallet',
             line=dict(color='#3498db', width=3),
             marker=dict(size=10),
             text=['${:,.0f}'.format(v) for v in quarterly['cost_per_piece']],
             textposition='top center',
             textfont=dict(size=11)
         ))
+        # Add 15% padding to y-axis for labels
+        y_min_cpp = quarterly['cost_per_piece'].min()
+        y_max_cpp = quarterly['cost_per_piece'].max()
+        y_range_cpp = y_max_cpp - y_min_cpp if y_max_cpp != y_min_cpp else abs(y_max_cpp) * 0.2
         fig_cpp.update_layout(
             xaxis_title="Quarter",
-            yaxis_title="Cost per Piece ($)",
-            height=350
+            yaxis_title="Cost per Pallet ($)",
+            height=350,
+            yaxis=dict(range=[y_min_cpp - y_range_cpp * 0.1, y_max_cpp + y_range_cpp * 0.2])
         )
         st.plotly_chart(fig_cpp, use_container_width=True)
 
@@ -432,7 +442,7 @@ def calculate_market_trends(data):
         slope_profit, intercept, r_value, p_value, std_err = stats.linregress(x, y_profit)
         r2_profit = r_value ** 2
 
-        # Cost per piece trend
+        # Cost per pallet trend
         slope_cpp, intercept, r_value, p_value, std_err = stats.linregress(x, y_cpp)
         r2_cpp = r_value ** 2
 
@@ -487,7 +497,7 @@ if not trends_df.empty:
             st.info("No markets found with consistent profit growth (R² ≥ 0.5)")
 
     with col2:
-        st.subheader("📉 Consistent Cost/Piece Reduction")
+        st.subheader("📉 Consistent Cost/Pallet Reduction")
         st.caption("Markets with steady quarter-over-quarter cost efficiency gains")
 
         # Filter for negative slope (cost going down) and good R²
@@ -503,10 +513,10 @@ if not trends_df.empty:
             display_cpp['cpp_slope'] = display_cpp['cpp_slope'].apply(lambda x: f"${x:,.2f}/qtr")
             display_cpp['cpp_r2'] = display_cpp['cpp_r2'].apply(lambda x: f"{x:.2f}")
             display_cpp['avg_cost_per_piece'] = display_cpp['avg_cost_per_piece'].apply(lambda x: f"${x:,.2f}")
-            display_cpp.columns = ['Market', 'Reduction Rate', 'R² (Consistency)', 'Avg Cost/Piece']
+            display_cpp.columns = ['Market', 'Reduction Rate', 'R² (Consistency)', 'Avg Cost/Pallet']
             st.dataframe(display_cpp, use_container_width=True, hide_index=True)
         else:
-            st.info("No markets found with consistent cost/piece reduction (R² ≥ 0.5)")
+            st.info("No markets found with consistent cost/pallet reduction (R² ≥ 0.5)")
 
     # Scatter plot showing all markets
     st.subheader("🎯 All Markets: Trend Strength vs Consistency")
@@ -561,10 +571,10 @@ if not trends_df.empty:
             },
             labels={
                 'cpp_r2': 'R² (Consistency)',
-                'cpp_slope': 'Cost/Piece Change ($/quarter)',
+                'cpp_slope': 'Cost/Pallet Change ($/quarter)',
                 'total_revenue': 'Total Revenue'
             },
-            title='Cost/Piece Trend: Change Rate vs Consistency'
+            title='Cost/Pallet Trend: Change Rate vs Consistency'
         )
         # Add quadrant lines
         fig_scatter_cpp.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
