@@ -20,8 +20,8 @@ st.sidebar.header("Drill Down Filters")
 
 # Get filter options
 @st.cache_data(ttl=3600)
-def get_filter_options():
-    """Get unique values for filter dropdowns"""
+def get_customers():
+    """Get unique customer names for filter dropdown"""
     customers_query = """
         SELECT DISTINCT clientName
         FROM otp_reports
@@ -29,24 +29,36 @@ def get_filter_options():
         ORDER BY clientName
         LIMIT 500
     """
-    lanes_query = """
-        SELECT DISTINCT CONCAT(startMarket, ' → ', endMarket) as lane
-        FROM otp_reports
-        WHERE startMarket IS NOT NULL AND startMarket != ''
-          AND endMarket IS NOT NULL AND endMarket != ''
-        ORDER BY lane
-        LIMIT 500
-    """
-
     customers_df = execute_query(customers_query)
+    return customers_df['clientName'].tolist() if customers_df is not None else []
+
+@st.cache_data(ttl=3600)
+def get_lanes_for_customer(customer_name=None):
+    """Get unique lanes, optionally filtered by customer"""
+    if customer_name:
+        lanes_query = f"""
+            SELECT DISTINCT CONCAT(startMarket, ' → ', endMarket) as lane
+            FROM otp_reports
+            WHERE startMarket IS NOT NULL AND startMarket != ''
+              AND endMarket IS NOT NULL AND endMarket != ''
+              AND clientName = '{customer_name}'
+            ORDER BY lane
+            LIMIT 500
+        """
+    else:
+        lanes_query = """
+            SELECT DISTINCT CONCAT(startMarket, ' → ', endMarket) as lane
+            FROM otp_reports
+            WHERE startMarket IS NOT NULL AND startMarket != ''
+              AND endMarket IS NOT NULL AND endMarket != ''
+            ORDER BY lane
+            LIMIT 500
+        """
     lanes_df = execute_query(lanes_query)
+    return lanes_df['lane'].tolist() if lanes_df is not None else []
 
-    customers = customers_df['clientName'].tolist() if customers_df is not None else []
-    lanes = lanes_df['lane'].tolist() if lanes_df is not None else []
-
-    return customers, lanes
-
-customers, lanes = get_filter_options()
+customers = get_customers()
+lanes = get_lanes_for_customer()  # All lanes for initial load
 
 # Use filters from main page if available
 default_filters = st.session_state.get('filters', {})
@@ -76,14 +88,17 @@ drill_type = st.sidebar.radio("Drill down by:", ["Customer", "Lane"])
 
 if drill_type == "Customer":
     selected_value = st.sidebar.selectbox("Select Customer", options=customers)
+    # Get lanes specific to this customer
+    customer_lanes = get_lanes_for_customer(selected_value)
 else:
     selected_value = st.sidebar.selectbox("Select Lane", options=lanes)
+    customer_lanes = []
 
 # Optional additional filters
 st.sidebar.markdown("---")
 st.sidebar.subheader("Additional Filters")
-if drill_type != "Lane":
-    selected_lane = st.sidebar.selectbox("Filter by Lane (optional)", options=["All"] + lanes)
+if drill_type == "Customer":
+    selected_lane = st.sidebar.selectbox("Filter by Lane (optional)", options=["All"] + customer_lanes)
 else:
     selected_lane = "All"
 
