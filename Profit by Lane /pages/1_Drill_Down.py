@@ -7,13 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db_connection import execute_query
 
-st.set_page_config(
-    page_title="Drill Down - Order Details",
-    page_icon="🔍",
-    layout="wide"
-)
-
-# Check if user is authenticated (handled by app.py)
+# Check if user is authenticated (handled by Summary_View.py)
 if not st.session_state.get("password_correct", False):
     st.warning("Please log in from the main page")
     st.stop()
