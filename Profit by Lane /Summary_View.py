@@ -37,13 +37,6 @@ end_date = col2.date_input("End Date", default_end)
 @st.cache_data(ttl=3600)
 def get_filter_options():
     """Get unique values for filter dropdowns"""
-    carriers_query = """
-        SELECT DISTINCT carrierName
-        FROM otp_reports
-        WHERE carrierName IS NOT NULL AND carrierName != ''
-        ORDER BY carrierName
-        LIMIT 500
-    """
     customers_query = """
         SELECT DISTINCT clientName
         FROM otp_reports
@@ -60,27 +53,24 @@ def get_filter_options():
         LIMIT 500
     """
 
-    carriers_df = execute_query(carriers_query)
     customers_df = execute_query(customers_query)
     lanes_df = execute_query(lanes_query)
 
-    carriers = carriers_df['carrierName'].tolist() if carriers_df is not None else []
     customers = customers_df['clientName'].tolist() if customers_df is not None else []
     lanes = lanes_df['lane'].tolist() if lanes_df is not None else []
 
-    return carriers, customers, lanes
+    return customers, lanes
 
-carriers, customers, lanes = get_filter_options()
+customers, lanes = get_filter_options()
 
 # Filter selections
-selected_carriers = st.sidebar.multiselect("Carrier", options=carriers, default=[])
 selected_customers = st.sidebar.multiselect("Customer", options=customers, default=[])
 selected_lanes = st.sidebar.multiselect("Lane", options=lanes, default=[])
 
 
 # --- Main Query ---
 @st.cache_data(ttl=300)
-def get_profit_by_lane_data(start_date, end_date, carriers, customers, lanes, shipment_type):
+def get_profit_by_lane_data(start_date, end_date, customers, lanes, shipment_type):
     """
     Get profit by lane data with cross-dock cost breakdown.
 
@@ -98,10 +88,6 @@ def get_profit_by_lane_data(start_date, end_date, carriers, customers, lanes, sh
         f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') >= '{start_date}'",
         f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') <= '{end_date}'"
     ]
-
-    if carriers:
-        carriers_str = "', '".join(carriers)
-        base_conditions.append(f"carrierName IN ('{carriers_str}')")
 
     if customers:
         customers_str = "', '".join(customers)
@@ -231,7 +217,6 @@ with st.spinner("Loading data..."):
     df = get_profit_by_lane_data(
         start_date.strftime('%Y-%m-%d'),
         end_date.strftime('%Y-%m-%d'),
-        selected_carriers,
         selected_customers,
         selected_lanes,
         shipment_type
@@ -278,7 +263,6 @@ if df is not None and len(df) > 0:
     st.session_state['filters'] = {
         'start_date': start_date,
         'end_date': end_date,
-        'carriers': selected_carriers,
         'customers': selected_customers,
         'lanes': selected_lanes,
         'shipment_type': shipment_type

@@ -22,40 +22,31 @@ st.sidebar.header("Drill Down Filters")
 @st.cache_data(ttl=3600)
 def get_filter_options():
     """Get unique values for filter dropdowns"""
-    carriers_query = """
-        SELECT DISTINCT carrierName 
-        FROM otp_reports 
-        WHERE carrierName IS NOT NULL AND carrierName != ''
-        ORDER BY carrierName
-        LIMIT 500
-    """
     customers_query = """
-        SELECT DISTINCT clientName 
-        FROM otp_reports 
+        SELECT DISTINCT clientName
+        FROM otp_reports
         WHERE clientName IS NOT NULL AND clientName != ''
         ORDER BY clientName
         LIMIT 500
     """
     lanes_query = """
         SELECT DISTINCT CONCAT(startMarket, ' → ', endMarket) as lane
-        FROM otp_reports 
+        FROM otp_reports
         WHERE startMarket IS NOT NULL AND startMarket != ''
           AND endMarket IS NOT NULL AND endMarket != ''
         ORDER BY lane
         LIMIT 500
     """
-    
-    carriers_df = execute_query(carriers_query)
+
     customers_df = execute_query(customers_query)
     lanes_df = execute_query(lanes_query)
-    
-    carriers = carriers_df['carrierName'].tolist() if carriers_df is not None else []
+
     customers = customers_df['clientName'].tolist() if customers_df is not None else []
     lanes = lanes_df['lane'].tolist() if lanes_df is not None else []
-    
-    return carriers, customers, lanes
 
-carriers, customers, lanes = get_filter_options()
+    return customers, lanes
+
+customers, lanes = get_filter_options()
 
 # Use filters from main page if available
 default_filters = st.session_state.get('filters', {})
@@ -80,13 +71,11 @@ default_end = default_filters.get('end_date', datetime.now())
 start_date = col1.date_input("Start Date", default_start)
 end_date = col2.date_input("End Date", default_end)
 
-# Drill-down selection - choose ONE carrier OR ONE customer
-drill_type = st.sidebar.radio("Drill down by:", ["Customer", "Carrier", "Lane"])
+# Drill-down selection - choose ONE customer OR lane
+drill_type = st.sidebar.radio("Drill down by:", ["Customer", "Lane"])
 
 if drill_type == "Customer":
     selected_value = st.sidebar.selectbox("Select Customer", options=customers)
-elif drill_type == "Carrier":
-    selected_value = st.sidebar.selectbox("Select Carrier", options=carriers)
 else:
     selected_value = st.sidebar.selectbox("Select Lane", options=lanes)
 
@@ -119,8 +108,6 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
 
     if drill_type == "Customer":
         base_conditions.append(f"clientName = '{selected_value}'")
-    elif drill_type == "Carrier":
-        base_conditions.append(f"carrierName = '{selected_value}'")
     else:  # Lane
         base_conditions.append(f"CONCAT(startMarket, ' → ', endMarket) = '{selected_value}'")
 
@@ -284,5 +271,5 @@ if selected_value:
     else:
         st.warning("No data found for the selected filters.")
 else:
-    st.info("Please select a customer, carrier, or lane from the sidebar to view order details.")
+    st.info("Please select a customer or lane from the sidebar to view order details.")
 
