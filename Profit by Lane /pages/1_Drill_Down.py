@@ -129,8 +129,8 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
 
     base_where = " AND ".join(base_conditions)
 
-    # Column selection for output
-    select_cols = """
+    # Column selection for output (use 'o.' prefix for JOINs)
+    select_cols_simple = """
         orderCode as `Order ID`,
         warpId as `Warp ID`,
         mainShipment as `Main Shipment`,
@@ -147,10 +147,27 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
         pickWindowFrom as `Pickup Window`
     """
 
+    select_cols_aliased = """
+        o.orderCode as `Order ID`,
+        o.warpId as `Warp ID`,
+        o.mainShipment as `Main Shipment`,
+        CONCAT(o.startMarket, ' → ', o.endMarket) as `Lane`,
+        o.clientName as `Customer`,
+        o.carrierName as `Carrier`,
+        o.pickLocationName as `Pickup Location`,
+        o.dropLocationName as `Drop Location`,
+        COALESCE(o.revenueAllocationNumber, 0) as `Revenue`,
+        COALESCE(o.costAllocationNumber, 0) as `Cost`,
+        COALESCE(o.revenueAllocationNumber, 0) - COALESCE(o.costAllocationNumber, 0) as `Profit`,
+        CASE WHEN o.pickLocationName = o.dropLocationName THEN 'Yes' ELSE 'No' END as `Cross-dock`,
+        o.shipmentType as `Shipment Type`,
+        o.pickWindowFrom as `Pickup Window`
+    """
+
     if shipment_type == "Full Truckload":
-        # FTL: Use ALL rows (YES + NO)
+        # FTL: Use ALL rows (YES + NO) - no JOIN needed
         query = f"""
-        SELECT {select_cols}
+        SELECT {select_cols_simple}
         FROM otp_reports
         WHERE {base_where}
           AND shipmentType = 'Full Truckload'
@@ -159,7 +176,7 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
         """
 
     elif shipment_type == "Less Than Truckload":
-        # LTL: Direct = single row, Multi-leg = NO rows only
+        # LTL: Direct = single row, Multi-leg = NO rows only - uses JOIN
         query = f"""
         WITH order_row_counts AS (
             SELECT
@@ -170,7 +187,7 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
               AND shipmentType = 'Less Than Truckload'
             GROUP BY orderCode
         )
-        SELECT {select_cols}
+        SELECT {select_cols_aliased}
         FROM otp_reports o
         JOIN order_row_counts orc ON o.orderCode = orc.orderCode
         WHERE {base_where}
@@ -184,7 +201,7 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
         """
 
     else:
-        # All: Combine FTL + LTL + other logic
+        # All: Combine FTL + LTL + other logic - uses JOIN
         query = f"""
         WITH order_row_counts AS (
             SELECT
@@ -195,7 +212,7 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
             WHERE {base_where}
             GROUP BY orderCode, shipmentType
         )
-        SELECT {select_cols}
+        SELECT {select_cols_aliased}
         FROM otp_reports o
         JOIN order_row_counts orc ON o.orderCode = orc.orderCode
         WHERE {base_where}
