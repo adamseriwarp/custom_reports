@@ -258,7 +258,7 @@ if df is not None and len(df) > 0:
     display_df = df[['lane', 'order_count', 'total_revenue', 'total_cost', 'total_profit',
                      'crossdock_cost', 'crossdock_cost_pct', 'margin_pct']].copy()
     display_df.columns = ['Lane', 'Orders', 'Revenue', 'Cost', 'Profit',
-                          'Cross-dock Cost', 'Cross-dock %', 'Margin %']
+                          'Cross-dock Cost', 'Crossdock Cost Share', 'Margin %']
 
     # Format currency columns
     st.dataframe(
@@ -267,7 +267,7 @@ if df is not None and len(df) > 0:
             'Cost': '${:,.0f}',
             'Profit': '${:,.0f}',
             'Cross-dock Cost': '${:,.0f}',
-            'Cross-dock %': '{:.1f}%',
+            'Crossdock Cost Share': '{:.1f}%',
             'Margin %': '{:.1f}%'
         }),
         use_container_width=True,
