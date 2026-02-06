@@ -6,7 +6,6 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db_connection import execute_query
-from auth import check_password
 
 st.set_page_config(
     page_title="Drill Down - Order Details",
@@ -14,7 +13,9 @@ st.set_page_config(
     layout="wide"
 )
 
-if not check_password():
+# Check if user is authenticated (handled by app.py)
+if not st.session_state.get("password_correct", False):
+    st.warning("Please log in from the main page")
     st.stop()
 
 st.title("🔍 Drill Down")
