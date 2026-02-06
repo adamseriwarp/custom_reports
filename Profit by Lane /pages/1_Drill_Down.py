@@ -6,6 +6,7 @@ import os
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db_connection import execute_query
+from auth import check_password
 
 st.set_page_config(
     page_title="Drill Down - Order Details",
@@ -13,39 +14,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Password Protection ---
-def check_password():
-    """Returns `True` if the user has entered the correct password."""
-
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if st.session_state["password"] == st.secrets.get("APP_PASSWORD", ""):
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Don't store password
-        else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        # First run, show input for password
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
-        return False
-    elif not st.session_state["password_correct"]:
-        # Password incorrect, show input + error
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
-        st.error("😕 Password incorrect")
-        return False
-    else:
-        # Password correct
-        return True
-
 if not check_password():
     st.stop()
 
-st.title("🔍 Drill Down - Order Details")
+st.title("🔍 Drill Down")
 st.markdown("View individual order rows that contribute to profit/revenue/cost")
 
 # --- Sidebar Filters ---
