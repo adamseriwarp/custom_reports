@@ -47,33 +47,39 @@ def get_db_connection():
 def execute_query(query, params=None):
     """
     Execute a SQL query and return results as a pandas DataFrame.
-    
+
     Args:
         query (str): SQL query to execute
         params (tuple, optional): Parameters for parameterized queries
-    
+
     Returns:
         pandas.DataFrame: Query results
     """
     connection = get_db_connection()
-    
+
     if connection is None:
-        st.error("Failed to connect to database")
+        st.error("Error executing query: MySQL Connection not available")
         return None
-    
+
     try:
+        # Check if connection is still alive, reconnect if needed
+        if not connection.is_connected():
+            connection.reconnect(attempts=3, delay=2)
+
         cursor = connection.cursor(dictionary=True)
         if params:
             cursor.execute(query, params)
         else:
             cursor.execute(query)
-        
+
         results = cursor.fetchall()
         cursor.close()
-        
+
         return pd.DataFrame(results)
-    
+
     except Error as e:
+        # Clear the cached connection so it can be recreated
+        get_db_connection.clear()
         st.error(f"Error executing query: {e}")
         return None
 
