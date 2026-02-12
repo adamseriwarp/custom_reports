@@ -108,10 +108,12 @@ def run_otp_otd_query(client_name, start_date, end_date):
             pickWindowFrom,
             pickWindowTo,
             pickTimeArrived,
+            pickTimeDeparted,
             pickupDelayCode,
             dropWindowFrom,
             dropWindowTo,
             dropTimeArrived,
+            dropTimeDeparted,
             deliveryDelayCode
         FROM otp_reports
         WHERE shipmentStatus = 'Complete'
@@ -160,9 +162,27 @@ def run_otp_otd_query(client_name, start_date, end_date):
         m.dropLocationName,
         CONCAT(m.pickWindowFrom, ' - ', m.pickWindowTo) as pickupWindow,
         m.pickTimeArrived,
+        m.pickTimeDeparted,
+        CASE
+            WHEN m.pickTimeArrived IS NOT NULL AND m.pickTimeArrived != ''
+                 AND m.pickTimeDeparted IS NOT NULL AND m.pickTimeDeparted != ''
+            THEN ROUND(TIMESTAMPDIFF(MINUTE,
+                STR_TO_DATE(m.pickTimeArrived, '%%m/%%d/%%Y %%H:%%i:%%s'),
+                STR_TO_DATE(m.pickTimeDeparted, '%%m/%%d/%%Y %%H:%%i:%%s')) / 60.0, 2)
+            ELSE NULL
+        END as pickupLoadTime,
         COALESCE(NULLIF(m.pickupDelayCode, ''), ep.pickupDelayCode) as pickupDelayCode,
         CONCAT(m.dropWindowFrom, ' - ', m.dropWindowTo) as deliveryWindow,
         m.dropTimeArrived,
+        m.dropTimeDeparted,
+        CASE
+            WHEN m.dropTimeArrived IS NOT NULL AND m.dropTimeArrived != ''
+                 AND m.dropTimeDeparted IS NOT NULL AND m.dropTimeDeparted != ''
+            THEN ROUND(TIMESTAMPDIFF(MINUTE,
+                STR_TO_DATE(m.dropTimeArrived, '%%m/%%d/%%Y %%H:%%i:%%s'),
+                STR_TO_DATE(m.dropTimeDeparted, '%%m/%%d/%%Y %%H:%%i:%%s')) / 60.0, 2)
+            ELSE NULL
+        END as dropoffLoadTime,
         COALESCE(NULLIF(m.deliveryDelayCode, ''), ld.deliveryDelayCode) as deliveryDelayCode,
         CASE
             WHEN m.pickTimeArrived IS NULL OR m.pickTimeArrived = '' THEN 'No Pickup Data'
@@ -184,8 +204,8 @@ def run_otp_otd_query(client_name, start_date, end_date):
 
     cursor.execute(query, (client_name, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
     columns = ['Order Code', 'Warp ID', 'Shipment Type', 'Pickup Location', 'Delivery Location',
-               'Pickup Window', 'Pickup Arrival', 'Pickup Delay Code',
-               'Delivery Window', 'Delivery Arrival', 'Delivery Delay Code',
+               'Pickup Window', 'Pickup Arrival', 'Pickup Departure', 'Pickup Load Time (hrs)', 'Pickup Delay Code',
+               'Delivery Window', 'Delivery Arrival', 'Delivery Departure', 'Delivery Load Time (hrs)', 'Delivery Delay Code',
                'OTP Status', 'OTD Status', 'pickWindowFrom']
     return pd.DataFrame(cursor.fetchall(), columns=columns)
 
