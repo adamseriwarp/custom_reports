@@ -203,12 +203,23 @@ def run_otp_otd_query(client_name, start_date, end_date):
     LEFT JOIN latest_dropoff_delay ld ON m.orderCode = ld.orderCode
     """
 
-    cursor.execute(query, (client_name, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
+    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_date.strftime('%Y-%m-%d')
+
+    # Debug output
+    st.write(f"DEBUG: Querying for client='{client_name}', start='{start_str}', end='{end_str}'")
+
+    cursor.execute(query, (client_name, start_str, end_str))
     columns = ['Order Code', 'Warp ID', 'Shipment Type', 'Pickup Location', 'Delivery Location',
                'Pickup Window', 'Pickup Arrival', 'Pickup Departure', 'Pickup Load Time (hrs)', 'Pickup Delay Code',
                'Delivery Window', 'Delivery Arrival', 'Delivery Departure', 'Delivery Load Time (hrs)', 'Delivery Delay Code',
                'OTP Status', 'OTD Status', 'pickWindowFrom']
-    return pd.DataFrame(cursor.fetchall(), columns=columns)
+    result = pd.DataFrame(cursor.fetchall(), columns=columns)
+
+    # Debug output
+    st.write(f"DEBUG: Query returned {len(result)} rows")
+
+    return result
 
 # Sidebar - Page Navigation
 st.sidebar.header("Navigation")
