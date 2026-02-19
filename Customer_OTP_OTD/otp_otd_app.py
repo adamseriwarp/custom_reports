@@ -356,12 +356,25 @@ else:
 
             trend_data = trend_data.dropna(subset=['OTP Rate', 'OTD Rate'])
 
-            if len(trend_data) > 0:
-                # Create line chart
+            # Check if there's sufficient data for meaningful trends
+            total_shipments = len(df)
+            min_shipments_for_trend = 10
+            min_periods_for_trend = 3
+
+            if total_shipments < min_shipments_for_trend:
+                st.warning(f"⚠️ Insufficient data for trend analysis. Found {total_shipments} shipment(s), but at least {min_shipments_for_trend} shipments are recommended for meaningful trends.")
+            elif len(trend_data) < min_periods_for_trend:
+                st.warning(f"⚠️ Insufficient time periods for trend analysis. Found {len(trend_data)} period(s), but at least {min_periods_for_trend} periods are recommended for meaningful trends.")
+            elif len(trend_data) > 0:
+                # Create line chart with properly formatted dates
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=trend_data['period'], y=trend_data['OTP Rate'],
+
+                # Convert period to string format for better display
+                trend_data['period_str'] = pd.to_datetime(trend_data['period']).dt.strftime('%b %d, %Y')
+
+                fig.add_trace(go.Scatter(x=trend_data['period_str'], y=trend_data['OTP Rate'],
                                          mode='lines+markers', name='OTP Rate', line=dict(color='blue')))
-                fig.add_trace(go.Scatter(x=trend_data['period'], y=trend_data['OTD Rate'],
+                fig.add_trace(go.Scatter(x=trend_data['period_str'], y=trend_data['OTD Rate'],
                                          mode='lines+markers', name='OTD Rate', line=dict(color='green')))
 
                 fig.update_layout(
@@ -369,7 +382,8 @@ else:
                     yaxis_title='Rate (%)',
                     yaxis=dict(range=[0, 100]),
                     hovermode='x unified',
-                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
+                    xaxis=dict(tickangle=-45)
                 )
 
                 st.plotly_chart(fig, use_container_width=True)
@@ -377,10 +391,11 @@ else:
                 # Show trend data table
                 with st.expander("View Trend Data"):
                     trend_display = trend_data.copy()
+                    trend_display['Period'] = trend_display['period_str']
                     trend_display['OTP Rate'] = trend_display['OTP Rate'].round(1).astype(str) + '%'
                     trend_display['OTD Rate'] = trend_display['OTD Rate'].round(1).astype(str) + '%'
                     trend_display['Shipments'] = trend_display['Shipments'].astype(int)
-                    st.dataframe(trend_display, use_container_width=True, hide_index=True)
+                    st.dataframe(trend_display[['Period', 'OTP Rate', 'OTD Rate', 'Shipments']], use_container_width=True, hide_index=True)
             else:
                 st.info("Not enough data to display trend.")
 
