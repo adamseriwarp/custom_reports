@@ -209,6 +209,25 @@ def run_otp_otd_query(client_name, start_date, end_date):
     # Debug output
     st.write(f"DEBUG: Querying for client='{client_name}', start='{start_str}', end='{end_str}'")
 
+    # Additional debug: Check what dates exist in the database for this client
+    debug_query = """
+    SELECT pickWindowFrom, shipmentStatus, mainShipment, orderCode
+    FROM otp_reports
+    WHERE clientName = %s
+      AND shipmentStatus = 'Complete'
+      AND mainShipment = 'YES'
+      AND orderCode IS NOT NULL AND orderCode != ''
+      AND STR_TO_DATE(pickWindowFrom, '%%m/%%d/%%Y %%H:%%i:%%s') >= '2026-01-01'
+      AND STR_TO_DATE(pickWindowFrom, '%%m/%%d/%%Y %%H:%%i:%%s') < '2026-03-01'
+    ORDER BY STR_TO_DATE(pickWindowFrom, '%%m/%%d/%%Y %%H:%%i:%%s')
+    LIMIT 20
+    """
+    cursor.execute(debug_query, (client_name,))
+    debug_results = cursor.fetchall()
+    st.write(f"DEBUG: Sample dates in database for {client_name} (Jan-Feb 2026):")
+    for row in debug_results:
+        st.write(f"  - {row[0]} | Status: {row[1]} | Main: {row[2]} | Order: {row[3]}")
+
     cursor.execute(query, (client_name, start_str, end_str))
     columns = ['Order Code', 'Warp ID', 'Shipment Type', 'Pickup Location', 'Delivery Location',
                'Pickup Window', 'Pickup Arrival', 'Pickup Departure', 'Pickup Load Time (hrs)', 'Pickup Delay Code',
