@@ -45,7 +45,7 @@ def get_all_clients_summary(start_date, end_date):
         FROM otp_reports
         WHERE shipmentStatus = 'Complete'
           AND STR_TO_DATE(pickWindowFrom, '%%m/%%d/%%Y %%H:%%i:%%s') >= %s
-          AND STR_TO_DATE(pickWindowFrom, '%%m/%%d/%%Y %%H:%%i:%%s') < %s
+          AND STR_TO_DATE(pickWindowFrom, '%%m/%%d/%%Y %%H:%%i:%%s') <= %s
           AND orderCode IS NOT NULL AND orderCode != ''
           AND (pickLocationName IS NULL OR dropLocationName IS NULL OR pickLocationName != dropLocationName)
           AND mainShipment = 'YES'
