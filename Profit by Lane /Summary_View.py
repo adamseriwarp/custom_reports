@@ -21,7 +21,7 @@ st.sidebar.header("Filters")
 # Shipment Type filter (important for logic)
 shipment_type = st.sidebar.selectbox(
     "Shipment Type",
-    options=["All", "Full Truckload", "Less Than Truckload"],
+    options=["All", "Full Truckload", "Less Than Truckload", "Parcel"],
     index=0
 )
 
@@ -161,6 +161,30 @@ def get_profit_by_lane_data(start_date, end_date, customers, lanes, shipment_typ
                 ELSE 0
             END) as crossdock_cost
         FROM filtered_rows
+        GROUP BY startMarket, endMarket
+        ORDER BY total_profit DESC
+        """
+
+    elif shipment_type == "Parcel":
+        # Parcel: Use mainShipment = 'YES' rows only
+        query = f"""
+        SELECT
+            CONCAT(startMarket, ' → ', endMarket) as lane,
+            startMarket,
+            endMarket,
+            COUNT(DISTINCT orderCode) as order_count,
+            SUM(COALESCE(revenueAllocationNumber, 0)) as total_revenue,
+            SUM(COALESCE(costAllocationNumber, 0)) as total_cost,
+            SUM(COALESCE(revenueAllocationNumber, 0)) - SUM(COALESCE(costAllocationNumber, 0)) as total_profit,
+            SUM(CASE
+                WHEN pickLocationName = dropLocationName
+                THEN COALESCE(costAllocationNumber, 0)
+                ELSE 0
+            END) as crossdock_cost
+        FROM otp_reports
+        WHERE {base_where}
+          AND shipmentType = 'Parcel'
+          AND mainShipment = 'YES'
         GROUP BY startMarket, endMarket
         ORDER BY total_profit DESC
         """

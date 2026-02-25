@@ -68,7 +68,7 @@ from datetime import datetime, timedelta
 
 # Shipment Type filter (matching main page)
 default_shipment_type = default_filters.get('shipment_type', 'All')
-shipment_type_options = ["All", "Full Truckload", "Less Than Truckload"]
+shipment_type_options = ["All", "Full Truckload", "Less Than Truckload", "Parcel"]
 default_idx = shipment_type_options.index(default_shipment_type) if default_shipment_type in shipment_type_options else 0
 shipment_type = st.sidebar.selectbox(
     "Shipment Type",
@@ -199,6 +199,18 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
             OR orc.total_rows = 1
           )
         ORDER BY o.orderCode, o.mainShipment DESC, o.warpId
+        LIMIT 5000
+        """
+
+    elif shipment_type == "Parcel":
+        # Parcel: Use mainShipment = 'YES' rows only - no JOIN needed
+        query = f"""
+        SELECT {select_cols_simple}
+        FROM otp_reports
+        WHERE {base_where}
+          AND shipmentType = 'Parcel'
+          AND mainShipment = 'YES'
+        ORDER BY orderCode, mainShipment DESC, warpId
         LIMIT 5000
         """
 
