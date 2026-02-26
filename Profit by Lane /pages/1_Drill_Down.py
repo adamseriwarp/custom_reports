@@ -283,7 +283,7 @@ if selected_value:
                 'Cost': '${:,.2f}',
                 'Profit': '${:,.2f}'
             }),
-            use_container_width=True,
+            width='stretch',
             height=600
         )
         

@@ -238,7 +238,7 @@ if df is not None and len(df) > 0:
             'Cross-dock Revenue': '${:,.0f}',
             'Margin %': '{:.1f}%'
         }),
-        use_container_width=True,
+        width='stretch',
         hide_index=True
     )
 else:

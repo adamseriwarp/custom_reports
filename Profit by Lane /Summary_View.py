@@ -50,7 +50,7 @@ def get_filter_options():
         WHERE startMarket IS NOT NULL AND startMarket != ''
           AND endMarket IS NOT NULL AND endMarket != ''
         ORDER BY lane
-        LIMIT 3000
+        LIMIT 2500
     """
 
     customers_df = execute_query(customers_query)
@@ -279,7 +279,7 @@ if df is not None and len(df) > 0:
             'Cross-dock Cost Share': '{:.1f}%',
             'Margin %': '{:.1f}%'
         }),
-        use_container_width=True,
+        width='stretch',
         height=600
     )
 
