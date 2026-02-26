@@ -50,7 +50,7 @@ def get_filter_options():
         WHERE startMarket IS NOT NULL AND startMarket != ''
           AND endMarket IS NOT NULL AND endMarket != ''
         ORDER BY lane
-        LIMIT 500
+        LIMIT 3000
     """
 
     customers_df = execute_query(customers_query)
