@@ -54,8 +54,16 @@ selected_customers = st.sidebar.multiselect("Customer", options=customers)
 # --- Main Query ---
 @st.cache_data(ttl=300)
 def get_market_data(start_date, end_date, customers, shipment_type, include_crossdock):
-    """Get profit by market (same start/end market)."""
-    
+    """
+    Get profit by market (same start/end market).
+
+    Logic by shipment type (same as Summary View):
+    - FTL: Use ALL rows (YES + NO) to capture cross-dock handling costs
+    - LTL Direct (single row): Use that row
+    - LTL Multi-leg: Use ONLY NO rows (YES row duplicates revenue)
+    - Parcel: Use ONLY mainShipment = 'YES' rows
+    """
+
     base_conditions = [
         "shipmentStatus = 'Complete'",
         "startMarket IS NOT NULL AND startMarket != ''",
@@ -63,34 +71,131 @@ def get_market_data(start_date, end_date, customers, shipment_type, include_cros
         f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') >= '{start_date}'",
         f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') <= '{end_date}'"
     ]
-    
+
     if customers:
         customers_str = "', '".join(customers)
         base_conditions.append(f"clientName IN ('{customers_str}')")
-    
-    if shipment_type != "All":
-        base_conditions.append(f"shipmentType = '{shipment_type}'")
-    
+
+    crossdock_filter = ""
     if not include_crossdock:
-        base_conditions.append("pickLocationName != dropLocationName")
-    
+        crossdock_filter = "AND pickLocationName != dropLocationName"
+
     base_where = " AND ".join(base_conditions)
-    
-    query = f"""
-    SELECT
-        startMarket as market,
-        COUNT(DISTINCT orderCode) as order_count,
-        SUM(COALESCE(revenueAllocationNumber, 0)) as total_revenue,
-        SUM(COALESCE(costAllocationNumber, 0)) as total_cost,
-        SUM(COALESCE(revenueAllocationNumber, 0)) - SUM(COALESCE(costAllocationNumber, 0)) as total_profit,
-        SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(costAllocationNumber, 0) ELSE 0 END) as crossdock_cost,
-        SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as crossdock_revenue
-    FROM otp_reports
-    WHERE {base_where}
-    GROUP BY startMarket
-    ORDER BY total_profit ASC
-    """
-    
+
+    if shipment_type == "Full Truckload":
+        # FTL: Use ALL rows (YES + NO) to capture cross-dock handling costs
+        query = f"""
+        SELECT
+            startMarket as market,
+            COUNT(DISTINCT orderCode) as order_count,
+            SUM(COALESCE(revenueAllocationNumber, 0)) as total_revenue,
+            SUM(COALESCE(costAllocationNumber, 0)) as total_cost,
+            SUM(COALESCE(revenueAllocationNumber, 0)) - SUM(COALESCE(costAllocationNumber, 0)) as total_profit,
+            SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(costAllocationNumber, 0) ELSE 0 END) as crossdock_cost,
+            SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as crossdock_revenue
+        FROM otp_reports
+        WHERE {base_where}
+          AND shipmentType = 'Full Truckload'
+          {crossdock_filter}
+        GROUP BY startMarket
+        ORDER BY total_profit ASC
+        """
+
+    elif shipment_type == "Less Than Truckload":
+        # LTL: Need to handle direct vs multi-leg differently
+        query = f"""
+        WITH order_row_counts AS (
+            SELECT
+                orderCode,
+                COUNT(*) as total_rows
+            FROM otp_reports
+            WHERE {base_where}
+              AND shipmentType = 'Less Than Truckload'
+            GROUP BY orderCode
+        ),
+        filtered_rows AS (
+            SELECT o.*
+            FROM otp_reports o
+            JOIN order_row_counts orc ON o.orderCode = orc.orderCode
+            WHERE {base_where}
+              AND o.shipmentType = 'Less Than Truckload'
+              AND (
+                (orc.total_rows > 1 AND o.mainShipment = 'NO')
+                OR orc.total_rows = 1
+              )
+              {crossdock_filter}
+        )
+        SELECT
+            startMarket as market,
+            COUNT(DISTINCT orderCode) as order_count,
+            SUM(COALESCE(revenueAllocationNumber, 0)) as total_revenue,
+            SUM(COALESCE(costAllocationNumber, 0)) as total_cost,
+            SUM(COALESCE(revenueAllocationNumber, 0)) - SUM(COALESCE(costAllocationNumber, 0)) as total_profit,
+            SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(costAllocationNumber, 0) ELSE 0 END) as crossdock_cost,
+            SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as crossdock_revenue
+        FROM filtered_rows
+        GROUP BY startMarket
+        ORDER BY total_profit ASC
+        """
+
+    elif shipment_type == "Parcel":
+        # Parcel: Use mainShipment = 'YES' rows only
+        query = f"""
+        SELECT
+            startMarket as market,
+            COUNT(DISTINCT orderCode) as order_count,
+            SUM(COALESCE(revenueAllocationNumber, 0)) as total_revenue,
+            SUM(COALESCE(costAllocationNumber, 0)) as total_cost,
+            SUM(COALESCE(revenueAllocationNumber, 0)) - SUM(COALESCE(costAllocationNumber, 0)) as total_profit,
+            SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(costAllocationNumber, 0) ELSE 0 END) as crossdock_cost,
+            SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as crossdock_revenue
+        FROM otp_reports
+        WHERE {base_where}
+          AND shipmentType = 'Parcel'
+          AND mainShipment = 'YES'
+          {crossdock_filter}
+        GROUP BY startMarket
+        ORDER BY total_profit ASC
+        """
+
+    else:
+        # All shipment types - combine FTL logic + LTL logic + Parcel logic
+        query = f"""
+        WITH order_row_counts AS (
+            SELECT
+                orderCode,
+                shipmentType,
+                COUNT(*) as total_rows
+            FROM otp_reports
+            WHERE {base_where}
+            GROUP BY orderCode, shipmentType
+        ),
+        filtered_rows AS (
+            SELECT o.*
+            FROM otp_reports o
+            JOIN order_row_counts orc ON o.orderCode = orc.orderCode
+            WHERE {base_where}
+              AND (
+                o.shipmentType = 'Full Truckload'
+                OR (o.shipmentType = 'Less Than Truckload' AND orc.total_rows > 1 AND o.mainShipment = 'NO')
+                OR (o.shipmentType = 'Less Than Truckload' AND orc.total_rows = 1)
+                OR (o.shipmentType NOT IN ('Full Truckload', 'Less Than Truckload') AND o.mainShipment = 'YES')
+              )
+              {crossdock_filter}
+        )
+        SELECT
+            startMarket as market,
+            COUNT(DISTINCT orderCode) as order_count,
+            SUM(COALESCE(revenueAllocationNumber, 0)) as total_revenue,
+            SUM(COALESCE(costAllocationNumber, 0)) as total_cost,
+            SUM(COALESCE(revenueAllocationNumber, 0)) - SUM(COALESCE(costAllocationNumber, 0)) as total_profit,
+            SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(costAllocationNumber, 0) ELSE 0 END) as crossdock_cost,
+            SUM(CASE WHEN pickLocationName = dropLocationName THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as crossdock_revenue
+        FROM filtered_rows
+        GROUP BY startMarket
+        ORDER BY total_profit ASC
+        """
+
     return execute_query(query)
 
 # Execute query
