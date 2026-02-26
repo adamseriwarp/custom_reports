@@ -43,7 +43,7 @@ def get_lanes_for_customer(customer_name=None):
               AND endMarket IS NOT NULL AND endMarket != ''
               AND clientName = '{customer_name}'
             ORDER BY lane
-            LIMIT 500
+            LIMIT 2500
         """
     else:
         lanes_query = """
@@ -52,7 +52,7 @@ def get_lanes_for_customer(customer_name=None):
             WHERE startMarket IS NOT NULL AND startMarket != ''
               AND endMarket IS NOT NULL AND endMarket != ''
             ORDER BY lane
-            LIMIT 500
+            LIMIT 2500
         """
     lanes_df = execute_query(lanes_query)
     return lanes_df['lane'].tolist() if lanes_df is not None else []
