@@ -25,7 +25,8 @@ shipment_type = st.sidebar.selectbox(
     index=0
 )
 
-# Date range filter
+# Date range filter (based on delivery date)
+st.sidebar.caption("*Dates based on actual/scheduled delivery*")
 col1, col2 = st.sidebar.columns(2)
 default_start = datetime.now() - timedelta(days=30)
 default_end = datetime.now()
@@ -80,13 +81,26 @@ def get_profit_by_lane_data(start_date, end_date, customers, lanes, shipment_typ
     - LTL Multi-leg: Use ONLY NO rows (YES row duplicates revenue)
     """
 
+    # Date logic:
+    # - Cross-dock leg (pickLocationName = dropLocationName): use dropWindowFrom
+    # - Regular leg with actual delivery: use dropDateArrived or dropTimeArrived
+    # - Regular leg without actual delivery: use dropWindowFrom
+    date_field = """
+        CASE
+            WHEN pickLocationName = dropLocationName THEN STR_TO_DATE(dropWindowFrom, '%m/%d/%Y %H:%i:%s')
+            WHEN dropTimeArrived IS NOT NULL AND dropTimeArrived != '' THEN STR_TO_DATE(dropTimeArrived, '%m/%d/%Y %H:%i:%s')
+            WHEN dropDateArrived IS NOT NULL AND dropDateArrived != '' THEN STR_TO_DATE(dropDateArrived, '%m/%d/%Y')
+            ELSE STR_TO_DATE(dropWindowFrom, '%m/%d/%Y %H:%i:%s')
+        END
+    """
+
     # Build base WHERE conditions
     base_conditions = [
         "shipmentStatus = 'Complete'",
         "startMarket IS NOT NULL AND startMarket != ''",
         "endMarket IS NOT NULL AND endMarket != ''",
-        f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') >= '{start_date}'",
-        f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') <= '{end_date}'"
+        f"({date_field}) >= '{start_date}'",
+        f"({date_field}) <= '{end_date}'"
     ]
 
     if customers:

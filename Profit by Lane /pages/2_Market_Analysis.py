@@ -64,12 +64,25 @@ def get_market_data(start_date, end_date, customers, shipment_type, include_cros
     - Parcel: Use ONLY mainShipment = 'YES' rows
     """
 
+    # Date logic:
+    # - Cross-dock leg (pickLocationName = dropLocationName): use dropWindowFrom
+    # - Regular leg with actual delivery: use dropDateArrived or dropTimeArrived
+    # - Regular leg without actual delivery: use dropWindowFrom
+    date_field = """
+        CASE
+            WHEN pickLocationName = dropLocationName THEN STR_TO_DATE(dropWindowFrom, '%m/%d/%Y %H:%i:%s')
+            WHEN dropTimeArrived IS NOT NULL AND dropTimeArrived != '' THEN STR_TO_DATE(dropTimeArrived, '%m/%d/%Y %H:%i:%s')
+            WHEN dropDateArrived IS NOT NULL AND dropDateArrived != '' THEN STR_TO_DATE(dropDateArrived, '%m/%d/%Y')
+            ELSE STR_TO_DATE(dropWindowFrom, '%m/%d/%Y %H:%i:%s')
+        END
+    """
+
     base_conditions = [
         "shipmentStatus = 'Complete'",
         "startMarket IS NOT NULL AND startMarket != ''",
         "startMarket = endMarket",  # Same market filter
-        f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') >= '{start_date}'",
-        f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') <= '{end_date}'"
+        f"({date_field}) >= '{start_date}'",
+        f"({date_field}) <= '{end_date}'"
     ]
 
     if customers:

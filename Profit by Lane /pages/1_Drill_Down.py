@@ -114,11 +114,24 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
     - LTL Multi-leg: Use ONLY NO rows (YES row duplicates revenue)
     """
 
+    # Date logic:
+    # - Cross-dock leg (pickLocationName = dropLocationName): use dropWindowFrom
+    # - Regular leg with actual delivery: use dropDateArrived or dropTimeArrived
+    # - Regular leg without actual delivery: use dropWindowFrom
+    date_field = """
+        CASE
+            WHEN pickLocationName = dropLocationName THEN STR_TO_DATE(dropWindowFrom, '%m/%d/%Y %H:%i:%s')
+            WHEN dropTimeArrived IS NOT NULL AND dropTimeArrived != '' THEN STR_TO_DATE(dropTimeArrived, '%m/%d/%Y %H:%i:%s')
+            WHEN dropDateArrived IS NOT NULL AND dropDateArrived != '' THEN STR_TO_DATE(dropDateArrived, '%m/%d/%Y')
+            ELSE STR_TO_DATE(dropWindowFrom, '%m/%d/%Y %H:%i:%s')
+        END
+    """
+
     # Build base WHERE conditions
     base_conditions = [
         "shipmentStatus = 'Complete'",
-        f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') >= '{start_date}'",
-        f"STR_TO_DATE(pickWindowFrom, '%m/%d/%Y %H:%i:%s') <= '{end_date}'"
+        f"({date_field}) >= '{start_date}'",
+        f"({date_field}) <= '{end_date}'"
     ]
 
     if drill_type == "Customer":
