@@ -108,10 +108,9 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
     """
     Get individual order rows for drill-down analysis.
 
-    Logic by shipment type:
-    - FTL: Use ALL rows (YES + NO) to capture cross-dock handling costs
-    - LTL Direct (single row): Use that row
-    - LTL Multi-leg: Use ONLY NO rows (YES row duplicates revenue)
+    NOTE: This returns RAW rows for display/investigation. The summary metrics
+    at the top of the page use get_order_summary_metrics() which applies the
+    proper Revenue and Cost Smart Strategies.
     """
 
     # Date logic:
@@ -129,7 +128,7 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
 
     # Build base WHERE conditions
     base_conditions = [
-        "shipmentStatus = 'Complete'",
+        "shipmentStatus != 'removed'",
         f"({date_field}) >= '{start_date}'",
         f"({date_field}) <= '{end_date}'"
     ]
@@ -191,25 +190,43 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
         """
 
     elif shipment_type == "Less Than Truckload":
-        # LTL: Direct = single row, Multi-leg = NO rows only - uses JOIN
+        # LTL: Smart Strategy based on revenue pattern (refined BOTH logic)
         query = f"""
-        WITH order_row_counts AS (
+        WITH order_pattern AS (
             SELECT
                 orderCode,
-                COUNT(*) as total_rows
+                SUM(CASE WHEN mainShipment = 'YES' AND shipmentStatus != 'removed' THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as yes_rev,
+                SUM(CASE WHEN mainShipment = 'NO' AND shipmentStatus != 'removed' THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as no_rev,
+                SUM(CASE WHEN mainShipment = 'NO' AND pickLocationName = dropLocationName AND shipmentStatus != 'removed'
+                    THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as xd_leg_rev
             FROM otp_reports
             WHERE {base_where}
               AND shipmentType = 'Less Than Truckload'
             GROUP BY orderCode
+        ),
+        order_strategy AS (
+            SELECT
+                orderCode,
+                CASE
+                    WHEN yes_rev > 0 AND no_rev = 0 THEN 'USE_YES'
+                    WHEN yes_rev = 0 THEN 'USE_NO'
+                    -- BOTH pattern: refined logic
+                    WHEN ABS((no_rev - xd_leg_rev) - yes_rev) < 1 THEN 'USE_NO'  -- NO = YES + XD
+                    WHEN yes_rev > 2 * no_rev THEN 'USE_BOTH'                     -- YES + NO both contribute
+                    ELSE 'USE_NO'                                                  -- Default to capture XD
+                END as strategy
+            FROM order_pattern
         )
         SELECT {select_cols_aliased}
         FROM otp_reports o
-        JOIN order_row_counts orc ON o.orderCode = orc.orderCode
+        JOIN order_strategy os ON o.orderCode = os.orderCode
         WHERE {base_where}
           AND o.shipmentType = 'Less Than Truckload'
+          AND o.shipmentStatus != 'removed'
           AND (
-            (orc.total_rows > 1 AND o.mainShipment = 'NO')
-            OR orc.total_rows = 1
+            (os.strategy = 'USE_YES' AND o.mainShipment = 'YES')
+            OR (os.strategy = 'USE_NO' AND o.mainShipment = 'NO')
+            OR (os.strategy = 'USE_BOTH')  -- Use all rows (YES + NO)
           )
         ORDER BY o.orderCode, o.mainShipment DESC, o.warpId
         LIMIT 5000
@@ -228,25 +245,45 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
         """
 
     else:
-        # All: Combine FTL + LTL + other logic - uses JOIN
+        # All: Combine FTL (all rows) + LTL Smart Strategy + Parcel (YES only)
         query = f"""
-        WITH order_row_counts AS (
+        WITH ltl_order_pattern AS (
             SELECT
                 orderCode,
-                shipmentType,
-                COUNT(*) as total_rows
+                SUM(CASE WHEN mainShipment = 'YES' AND shipmentStatus != 'removed' THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as yes_rev,
+                SUM(CASE WHEN mainShipment = 'NO' AND shipmentStatus != 'removed' THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as no_rev,
+                SUM(CASE WHEN mainShipment = 'NO' AND pickLocationName = dropLocationName AND shipmentStatus != 'removed'
+                    THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as xd_leg_rev
             FROM otp_reports
             WHERE {base_where}
-            GROUP BY orderCode, shipmentType
+              AND shipmentType = 'Less Than Truckload'
+            GROUP BY orderCode
+        ),
+        ltl_order_strategy AS (
+            SELECT
+                orderCode,
+                CASE
+                    WHEN yes_rev > 0 AND no_rev = 0 THEN 'USE_YES'
+                    WHEN yes_rev = 0 THEN 'USE_NO'
+                    -- BOTH pattern: refined logic
+                    WHEN ABS((no_rev - xd_leg_rev) - yes_rev) < 1 THEN 'USE_NO'  -- NO = YES + XD
+                    WHEN yes_rev > 2 * no_rev THEN 'USE_BOTH'                     -- YES + NO both contribute
+                    ELSE 'USE_NO'                                                  -- Default to capture XD
+                END as strategy
+            FROM ltl_order_pattern
         )
         SELECT {select_cols_aliased}
         FROM otp_reports o
-        JOIN order_row_counts orc ON o.orderCode = orc.orderCode
+        LEFT JOIN ltl_order_strategy los ON o.orderCode = los.orderCode
         WHERE {base_where}
           AND (
+            -- FTL: use ALL rows
             o.shipmentType = 'Full Truckload'
-            OR (o.shipmentType = 'Less Than Truckload' AND orc.total_rows > 1 AND o.mainShipment = 'NO')
-            OR (o.shipmentType = 'Less Than Truckload' AND orc.total_rows = 1)
+            -- LTL: use Smart Strategy
+            OR (o.shipmentType = 'Less Than Truckload' AND o.shipmentStatus != 'removed' AND los.strategy = 'USE_YES' AND o.mainShipment = 'YES')
+            OR (o.shipmentType = 'Less Than Truckload' AND o.shipmentStatus != 'removed' AND los.strategy = 'USE_NO' AND o.mainShipment = 'NO')
+            OR (o.shipmentType = 'Less Than Truckload' AND o.shipmentStatus != 'removed' AND los.strategy = 'USE_BOTH')
+            -- Parcel and others: use YES rows only
             OR (o.shipmentType NOT IN ('Full Truckload', 'Less Than Truckload') AND o.mainShipment = 'YES')
           )
         ORDER BY o.orderCode, o.mainShipment DESC, o.warpId
@@ -254,6 +291,116 @@ def get_order_details(start_date, end_date, drill_type, selected_value, selected
         """
 
     return execute_query(query)
+
+
+@st.cache_data(ttl=300)
+def get_order_summary_metrics(start_date, end_date, drill_type, selected_value, selected_lane, shipment_type):
+    """
+    Calculate summary metrics using proper Smart Strategies for Revenue and Cost.
+
+    Revenue Strategy: Refined BOTH logic (same as before)
+    Cost Strategy: V3 with sub-strategy (TRUE_DUPLICATE → YES, FALSE_POS → SUM)
+    """
+    # Build base WHERE conditions
+    date_field = """
+        CASE
+            WHEN pickLocationName = dropLocationName THEN STR_TO_DATE(dropWindowFrom, '%m/%d/%Y %H:%i:%s')
+            WHEN dropTimeArrived IS NOT NULL AND dropTimeArrived != '' THEN STR_TO_DATE(dropTimeArrived, '%m/%d/%Y %H:%i:%s')
+            WHEN dropDateArrived IS NOT NULL AND dropDateArrived != '' THEN STR_TO_DATE(dropDateArrived, '%m/%d/%Y')
+            ELSE STR_TO_DATE(dropWindowFrom, '%m/%d/%Y %H:%i:%s')
+        END
+    """
+
+    base_conditions = [
+        "shipmentStatus != 'removed'",
+        f"({date_field}) >= '{start_date}'",
+        f"({date_field}) <= '{end_date}'"
+    ]
+
+    if drill_type == "Customer":
+        base_conditions.append(f"clientName = '{selected_value}'")
+        if selected_lane and selected_lane != "All":
+            parts = selected_lane.split(' → ')
+            if len(parts) == 2:
+                base_conditions.append(f"startMarket = '{parts[0]}'")
+                base_conditions.append(f"endMarket = '{parts[1]}'")
+    else:
+        parts = selected_value.split(' → ')
+        if len(parts) == 2:
+            base_conditions.append(f"startMarket = '{parts[0]}'")
+            base_conditions.append(f"endMarket = '{parts[1]}'")
+
+    if shipment_type and shipment_type != "All":
+        base_conditions.append(f"shipmentType = '{shipment_type}'")
+
+    base_where = " AND ".join(base_conditions)
+
+    # Use separate Revenue and Cost Smart Strategies (same as Summary_View.py)
+    query = f"""
+    WITH order_metrics AS (
+        SELECT
+            orderCode,
+            -- Revenue metrics
+            SUM(CASE WHEN mainShipment = 'YES' AND shipmentStatus != 'removed' THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as yes_rev,
+            SUM(CASE WHEN mainShipment = 'NO' AND shipmentStatus != 'removed' THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as no_rev,
+            SUM(CASE WHEN mainShipment = 'NO' AND pickLocationName = dropLocationName AND shipmentStatus != 'removed'
+                THEN COALESCE(revenueAllocationNumber, 0) ELSE 0 END) as xd_leg_rev,
+            -- Cost metrics
+            SUM(CASE WHEN mainShipment = 'YES' AND shipmentStatus != 'removed' THEN COALESCE(costAllocationNumber, 0) ELSE 0 END) as yes_cost,
+            SUM(CASE WHEN mainShipment = 'NO' AND shipmentStatus != 'removed' THEN COALESCE(costAllocationNumber, 0) ELSE 0 END) as no_cost,
+            SUM(CASE WHEN mainShipment = 'NO' AND pickLocationName = dropLocationName AND shipmentStatus != 'removed'
+                THEN COALESCE(costAllocationNumber, 0) ELSE 0 END) as xd_no_cost,
+            -- Duplicate detection for cost
+            MAX(CASE WHEN mainShipment = 'NO' AND shipmentStatus != 'removed' AND ABS(
+                COALESCE(costAllocationNumber, 0) - (
+                    SELECT SUM(COALESCE(costAllocationNumber, 0))
+                    FROM otp_reports o2
+                    WHERE o2.orderCode = otp_reports.orderCode
+                      AND o2.mainShipment = 'YES'
+                      AND o2.shipmentStatus != 'removed'
+                )
+            ) < 1 THEN 1 ELSE 0 END) as has_matching_no_row
+        FROM otp_reports
+        WHERE {base_where}
+        GROUP BY orderCode
+    ),
+    order_calculated AS (
+        SELECT
+            orderCode,
+            -- Revenue Smart Strategy
+            CASE
+                WHEN yes_rev > 0 AND no_rev = 0 THEN yes_rev
+                WHEN yes_rev = 0 THEN no_rev
+                WHEN ABS((no_rev - xd_leg_rev) - yes_rev) < 1 THEN no_rev
+                WHEN yes_rev > 2 * no_rev THEN yes_rev + no_rev
+                ELSE no_rev
+            END as smart_revenue,
+            -- Cost Smart Strategy (V3 with sub-strategy)
+            CASE
+                WHEN yes_cost > 0 AND no_cost = 0 THEN yes_cost
+                WHEN yes_cost = 0 AND no_cost > 0 THEN no_cost
+                WHEN ABS((no_cost - xd_no_cost) - yes_cost) < 20 THEN
+                    CASE
+                        WHEN has_matching_no_row = 1 THEN yes_cost
+                        ELSE yes_cost + no_cost
+                    END
+                WHEN no_cost > yes_cost * 5 THEN yes_cost + no_cost
+                ELSE yes_cost + xd_no_cost
+            END as smart_cost,
+            xd_no_cost as crossdock_cost
+        FROM order_metrics
+    )
+    SELECT
+        COUNT(DISTINCT orderCode) as order_count,
+        SUM(smart_revenue) as total_revenue,
+        SUM(smart_cost) as total_cost,
+        SUM(smart_revenue) - SUM(smart_cost) as total_profit,
+        SUM(crossdock_cost) as crossdock_cost
+    FROM order_calculated
+    """
+
+    return execute_query(query)
+
 
 if selected_value:
     with st.spinner("Loading order details..."):
@@ -265,24 +412,46 @@ if selected_value:
             selected_lane,
             shipment_type
         )
-    
+        # Get accurate summary metrics using Smart Strategies
+        summary_df = get_order_summary_metrics(
+            start_date.strftime('%Y-%m-%d'),
+            end_date.strftime('%Y-%m-%d'),
+            drill_type,
+            selected_value,
+            selected_lane,
+            shipment_type
+        )
+
     if df is not None and len(df) > 0:
-        # Summary metrics
+        # Summary metrics using Smart Strategy calculations
         st.subheader(f"Summary for {drill_type}: {selected_value}")
-        
+
+        # Extract summary values (use Smart Strategy totals, but row count from df)
+        if summary_df is not None and len(summary_df) > 0:
+            total_orders = int(summary_df['order_count'].iloc[0])
+            total_revenue = float(summary_df['total_revenue'].iloc[0])
+            total_cost = float(summary_df['total_cost'].iloc[0])
+            total_profit = float(summary_df['total_profit'].iloc[0])
+            crossdock_cost = float(summary_df['crossdock_cost'].iloc[0])
+        else:
+            # Fallback to raw row sums if summary query fails
+            total_orders = df['Order ID'].nunique()
+            total_revenue = df['Revenue'].sum()
+            total_cost = df['Cost'].sum()
+            total_profit = df['Profit'].sum()
+            crossdock_df = df[df['Cross-dock'] == 'Yes']
+            crossdock_cost = crossdock_df['Cost'].sum()
+
         col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("Total Orders", f"{df['Order ID'].nunique():,}")
+        col1.metric("Total Orders", f"{total_orders:,}")
         col2.metric("Total Rows", f"{len(df):,}")
-        col3.metric("Total Revenue", f"${df['Revenue'].sum():,.0f}")
-        col4.metric("Total Cost", f"${df['Cost'].sum():,.0f}")
-        col5.metric("Total Profit", f"${df['Profit'].sum():,.0f}")
-        
+        col3.metric("Total Revenue", f"${total_revenue:,.0f}")
+        col4.metric("Total Cost", f"${total_cost:,.0f}")
+        col5.metric("Total Profit", f"${total_profit:,.0f}")
+
         # Cross-dock breakdown
-        crossdock_df = df[df['Cross-dock'] == 'Yes']
-        crossdock_cost = crossdock_df['Cost'].sum()
-        total_cost = df['Cost'].sum()
         crossdock_pct = (crossdock_cost / total_cost * 100) if total_cost > 0 else 0
-        
+
         st.info(f"💡 Cross-dock handling costs: ${crossdock_cost:,.0f} ({crossdock_pct:.1f}% of total cost)")
         
         st.markdown("---")
